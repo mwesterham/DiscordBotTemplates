@@ -1,0 +1,2 @@
+# DiscordBotTemplates
+Personal bot templates
