@@ -47,13 +47,13 @@ class GroovyPersonal(commands.Cog):
 
     await ctx.send("Success! Please add a song to play.")
 
+    await self.connect_if_necessary(ctx)
+    voice = self.guild_params[ctx.guild.id]["players"]
+
     self.guild_params[ctx.guild.id]["running"] = True
     mp3_dir = self.guild_params[ctx.guild.id]['mp3_directory']
-    while(self.guild_params[ctx.guild.id]["running"]):
-      await self.connect_if_necessary(ctx)
-
+    while(self.guild_params[ctx.guild.id]["running"] and await self.is_connected(ctx)):
       songsAreQueued = len(self.guild_params[ctx.guild.id]["song_queue"]) > 0
-      voice = self.guild_params[ctx.guild.id]["players"]
       ispaused = self.guild_params[ctx.guild.id]["paused"]
 
       if(songsAreQueued and not voice.is_playing() and not ispaused):
