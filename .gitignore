@@ -1,5 +1,6 @@
 # Project specific ignores
 *.mp3
+mp3s-cache/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

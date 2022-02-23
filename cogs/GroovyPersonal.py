@@ -1,22 +1,31 @@
 from discord.ext import commands, tasks
 from discord import FFmpegPCMAudio, utils, PCMVolumeTransformer
-import os
+import os, glob
 import asyncio
 import yt_dlp
 
 class GroovyPersonal(commands.Cog):
-  def __init__(self, bot, options):
+  def __init__(self, bot, options=None):
     self.bot = bot
-    self.options = options
+    self.extension = ".mp3"
+    self.options = options or {
+      "clean_cache": True
+    }
     self.guild_params = {}
   
   def setup(self):
     for guild in self.bot.guilds:
       print(guild)
+
+      this_dir = "./mp3s-cache/mp3s-"+str(guild.id)+"/"
+      if not os.path.exists(this_dir):
+        os.makedirs(this_dir)
       self.guild_params[guild.id] = {
         "players": None,
         "song_queue": [],
-        "running": False
+        "mp3_directory": this_dir,
+        "running": False,
+        "paused": False
       }
   
   @commands.Cog.listener()
@@ -39,23 +48,33 @@ class GroovyPersonal(commands.Cog):
     await ctx.send("Success! Please add a song to play.")
 
     self.guild_params[ctx.guild.id]["running"] = True
+    mp3_dir = self.guild_params[ctx.guild.id]['mp3_directory']
     while(self.guild_params[ctx.guild.id]["running"]):
       voice = await self.connect_if_necessary(ctx)
 
       songsAreQueued = len(self.guild_params[ctx.guild.id]["song_queue"]) > 0
-      if(songsAreQueued and not ctx.voice_client.is_playing()):
-        song_info = self.guild_params[ctx.guild.id]["song_queue"].pop()
-        url = song_info[0]
+      ispaused = self.guild_params[ctx.guild.id]["paused"]
+
+      if(songsAreQueued and not ctx.voice_client.is_playing() and not ispaused):
+
+        song_info = self.guild_params[ctx.guild.id]["song_queue"].pop(0)
+        self.guild_params[ctx.guild.id]["song_queue"].append(song_info)
+        [url, meta] = song_info
 
         await ctx.send("Prepping next song...")
-        song_id = await self.download_song(url)
+        song_id = meta['id'] + self.extension
+        if glob.glob(mp3_dir + song_id):
+          print ("File exist")
+        else:
+          print("File does not exist")
+          song_id = await self.download_song(url, mp3_dir)
 
-        await ctx.send("Now playing " + song_info[1]['title'])
-        await self.play_song(voice, song_id)
+        await ctx.send("Now playing " + meta['title'])
+        await self.play_song(voice, mp3_dir + song_id)
         self.guild_params[ctx.guild.id]["players"] = voice
       else:
         await asyncio.sleep(1)
-    
+
     # running is now false, reset
     self.guild_params[ctx.guild.id]["song_queue"].clear()
 
@@ -72,6 +91,13 @@ class GroovyPersonal(commands.Cog):
       print("Couldn't disconnect.")
     
     await ctx.send("See you next time :)")
+
+    # delete all temp files if we want to clean cache
+    await asyncio.sleep(3)
+    if(self.options["clean_cache"]):
+      filelist = glob.glob(os.path.join(mp3_dir, "*"+self.extension))
+      for f in filelist:
+        os.remove(f)
 
   @commands.command(
     help="Flags the player to end the music bot and disconnects. Dequeing all songs in process.",
@@ -97,6 +123,7 @@ class GroovyPersonal(commands.Cog):
     voice_player = self.guild_params[ctx.guild.id]["players"]
     if(voice_player):
       voice_player.pause()
+      self.guild_params[ctx.guild.id]["paused"] = True
 
   @commands.command(
     help="Resumes current song.",
@@ -106,6 +133,7 @@ class GroovyPersonal(commands.Cog):
     voice_player = self.guild_params[ctx.guild.id]["players"]
     if(voice_player):
       voice_player.resume()
+      self.guild_params[ctx.guild.id]["paused"] = False
 
   @commands.command(
     help="Queue up a song and insert at the end of the queue",
@@ -148,14 +176,33 @@ class GroovyPersonal(commands.Cog):
     [url, meta] = self.guild_params[ctx.guild.id]["song_queue"].pop(int(item_number)-1)
     await ctx.send("Removed " + meta['title'])
 
+  @commands.command(
+    help="Scale the volume by a given factor.",
+    brief="Scale the volume up or down."
+  )
+  async def volume(self, ctx, vol=1):
+    voice_player = self.guild_params[ctx.guild.id]["players"]
+    if(voice_player):
+      voice_player.source = PCMVolumeTransformer(voice_player.source, volume=vol)
+
+  @commands.command(
+    help="Clears the cache inside server.",
+    brief="Clear cache."
+  )
+  async def clearcache(self, ctx):
+    mp3_dir = self.guild_params[ctx.guild.id]['mp3_directory']
+    filelist = glob.glob(os.path.join(mp3_dir, "*"+self.extension))
+    for f in filelist:
+      os.remove(f)
+
   async def play_song(self, voice, path, volume=0.25):
     source = FFmpegPCMAudio(path)
     voice.play(source)
     voice.source = PCMVolumeTransformer(voice.source, volume=volume)
 
-  async def download_song(self, url, extension=".mp3"):
+  async def download_song(self, url, directory):
     ydl_opts = {
-        'outtmpl': '%(title)s.%(ext)s',
+        'outtmpl': './'+directory+'/%(id)s.%(ext)s',
         "format": "bestaudio/best",
         "postprocessors": [{
           'key': 'FFmpegExtractAudio',
@@ -166,7 +213,7 @@ class GroovyPersonal(commands.Cog):
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
       meta = ydl.extract_info(url, download=False)
       ydl.download([url])
-    return meta['title'] + extension
+    return meta['id'] + self.extension
 
   def getMetaData(self, url):
     ydl_opts = {
@@ -183,13 +230,16 @@ class GroovyPersonal(commands.Cog):
     return meta
 
   async def connect_if_necessary(self, ctx):
-    channel = ctx.message.author.voice.channel
-    if(not self.is_connected(ctx)):
-      voice = await channel.connect()
-    else:
-      voice = utils.get(ctx.bot.voice_clients, guild=ctx.guild)
-  
-    return voice
+    try:
+      channel = ctx.message.author.voice.channel
+      if(not self.is_connected(ctx)):
+        voice = await channel.connect()
+      else:
+        voice = utils.get(ctx.bot.voice_clients, guild=ctx.guild)
+    
+      return voice
+    except:
+      print("Error trying to connect to channel")
 
   def is_connected(self, ctx):
     voice_client = utils.get(ctx.bot.voice_clients, guild=ctx.guild)
