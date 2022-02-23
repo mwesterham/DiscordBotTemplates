@@ -11,7 +11,7 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 options = {}
 
 # Client instantiation
-client = commands.Bot(command_prefix=".")
+client = commands.Bot(command_prefix="!")
 client.add_cog(GroovyPersonal(client, options))
 client.add_cog(PingPong(client))
 client.run(TOKEN)

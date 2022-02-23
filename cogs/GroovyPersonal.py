@@ -55,7 +55,7 @@ class GroovyPersonal(commands.Cog):
       songsAreQueued = len(self.guild_params[ctx.guild.id]["song_queue"]) > 0
       ispaused = self.guild_params[ctx.guild.id]["paused"]
 
-      if(songsAreQueued and not ctx.voice_client.is_playing() and not ispaused):
+      if(songsAreQueued and not voice.is_playing() and not ispaused):
 
         song_info = self.guild_params[ctx.guild.id]["song_queue"].pop(0)
         self.guild_params[ctx.guild.id]["song_queue"].append(song_info)
