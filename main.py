@@ -8,7 +8,9 @@ from cogs.PingPong import PingPong
 TOKEN = os.getenv('DISCORD_TOKEN')
 
 # Set options
-options = {}
+options = {
+  "clean_cache": False
+}
 
 # Client instantiation
 client = commands.Bot(command_prefix="!")

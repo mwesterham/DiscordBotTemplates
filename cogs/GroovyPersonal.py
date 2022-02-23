@@ -63,12 +63,9 @@ class GroovyPersonal(commands.Cog):
 
         await ctx.send("Prepping next song...")
         song_id = meta['id'] + self.extension
-        if glob.glob(mp3_dir + song_id):
-          print ("File exist")
-        else:
-          print("File does not exist")
+        if not glob.glob(mp3_dir + song_id):
           song_id = await self.download_song(url, mp3_dir)
-
+          
         await ctx.send("Now playing " + meta['title'])
         await self.play_song(voice, mp3_dir + song_id)
         self.guild_params[ctx.guild.id]["players"] = voice
@@ -196,9 +193,12 @@ class GroovyPersonal(commands.Cog):
       os.remove(f)
 
   async def play_song(self, voice, path, volume=0.25):
-    source = FFmpegPCMAudio(path)
-    voice.play(source)
-    voice.source = PCMVolumeTransformer(voice.source, volume=volume)
+    try:
+      source = FFmpegPCMAudio(path)
+      voice.play(source)
+      voice.source = PCMVolumeTransformer(voice.source, volume=volume)
+    except:
+      print("Could not play for some reason.")
 
   async def download_song(self, url, directory):
     ydl_opts = {
