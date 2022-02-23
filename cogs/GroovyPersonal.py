@@ -50,25 +50,20 @@ class GroovyPersonal(commands.Cog):
     self.guild_params[ctx.guild.id]["running"] = True
     mp3_dir = self.guild_params[ctx.guild.id]['mp3_directory']
     while(self.guild_params[ctx.guild.id]["running"]):
-      voice = await self.connect_if_necessary(ctx)
+      await self.connect_if_necessary(ctx)
 
       songsAreQueued = len(self.guild_params[ctx.guild.id]["song_queue"]) > 0
+      voice = self.guild_params[ctx.guild.id]["players"]
       ispaused = self.guild_params[ctx.guild.id]["paused"]
 
       if(songsAreQueued and not voice.is_playing() and not ispaused):
 
         song_info = self.guild_params[ctx.guild.id]["song_queue"].pop(0)
         self.guild_params[ctx.guild.id]["song_queue"].append(song_info)
-        [url, meta] = song_info
-
-        await ctx.send("Prepping next song...")
-        song_id = meta['id'] + self.extension
-        if not glob.glob(mp3_dir + song_id):
-          song_id = await self.download_song(url, mp3_dir)
+        [url, meta, song_id] = song_info
           
         await ctx.send("Now playing " + meta['title'])
         await self.play_song(voice, mp3_dir + song_id)
-        self.guild_params[ctx.guild.id]["players"] = voice
       else:
         await asyncio.sleep(1)
 
@@ -138,9 +133,21 @@ class GroovyPersonal(commands.Cog):
   )
   async def add(self, ctx, url=None):
     if(url):
-      song_info = [url, self.getMetaData(url)]
+      url = url.split('&')[0]
+      meta = await self.getMetaData(url)
+
+      song_id = meta['id'] + self.extension
+      title = meta['title']
+      await ctx.send("Searching/Downloading... (" + title + ")")
+
+      mp3_dir = self.guild_params[ctx.guild.id]['mp3_directory']
+      if not glob.glob(mp3_dir + song_id):
+        print("Could not find song cached, downloading now.")
+        await self.download_song(url, mp3_dir)
+      
+      song_info = [url, meta, song_id]
       self.guild_params[ctx.guild.id]["song_queue"].append(song_info)
-      await ctx.send(song_info[1]['title'] + " has been added!")
+      await ctx.send("Added! (" + title + ")")
     else:
       await ctx.send("Please provide a url.")
 
@@ -163,24 +170,38 @@ class GroovyPersonal(commands.Cog):
     await ctx.send("`" + response + "`")
 
   @commands.command(
-    help="Allows you to input a number to remove from the queue. View what is in the queue with the view command.",
+    help="Allows you remove a specific item from the queue. Enter the number of the item in the queue that you would like to remove.",
     brief="Remove a item from the queue"
   )
   async def remove(self, ctx, item_number=None):
     if(item_number == None):
-      await ctx.send("Must provide a number in the queue to remove.")
+      await ctx.send("Must provide the number of an item in the queue to remove.")
       return
     [url, meta] = self.guild_params[ctx.guild.id]["song_queue"].pop(int(item_number)-1)
     await ctx.send("Removed " + meta['title'])
 
   @commands.command(
-    help="Scale the volume by a given factor.",
+    help="Allows you move an item to a specific position in the queue.",
+    brief="Move an item in the queue."
+  )
+  async def move(self, ctx, item_num=None, new_pos_num=None):
+    if(item_num == None or new_pos_num == None):
+      await ctx.send("Must provide the number of two items to swap.")
+      return
+    e = self.guild_params[ctx.guild.id]["song_queue"].pop(int(item_num)-1)
+    self.guild_params[ctx.guild.id]["song_queue"].insert(int(new_pos_num)-1, e)
+
+    [url, meta, song_id] = e
+    await ctx.send("Moving item to position " + str(new_pos_num) + ". (" + meta['title'] + ")")
+
+  @commands.command(
+    help="Scale the volume by a given factor. Enter the given factor in (ex. 0.5 to lower volume or 2 to increase volume).",
     brief="Scale the volume up or down."
   )
-  async def volume(self, ctx, vol=1):
+  async def volume(self, ctx, vol="1"):
     voice_player = self.guild_params[ctx.guild.id]["players"]
     if(voice_player):
-      voice_player.source = PCMVolumeTransformer(voice_player.source, volume=vol)
+      voice_player.source = PCMVolumeTransformer(voice_player.source, volume=float(vol))
 
   @commands.command(
     help="Clears the cache inside server.",
@@ -192,11 +213,11 @@ class GroovyPersonal(commands.Cog):
     for f in filelist:
       os.remove(f)
 
-  async def play_song(self, voice, path, volume=0.25):
+  async def play_song(self, voice, path, volume="0.25"):
     try:
       source = FFmpegPCMAudio(path)
       voice.play(source)
-      voice.source = PCMVolumeTransformer(voice.source, volume=volume)
+      voice.source = PCMVolumeTransformer(voice.source, volume=float(volume))
     except:
       print("Could not play for some reason.")
 
@@ -211,11 +232,9 @@ class GroovyPersonal(commands.Cog):
         }]
       }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-      meta = ydl.extract_info(url, download=False)
       ydl.download([url])
-    return meta['id'] + self.extension
 
-  def getMetaData(self, url):
+  async def getMetaData(self, url):
     ydl_opts = {
         'outtmpl': '%(title)s.%(ext)s',
         "format": "bestaudio/best",
@@ -232,15 +251,11 @@ class GroovyPersonal(commands.Cog):
   async def connect_if_necessary(self, ctx):
     try:
       channel = ctx.message.author.voice.channel
-      if(not self.is_connected(ctx)):
-        voice = await channel.connect()
-      else:
-        voice = utils.get(ctx.bot.voice_clients, guild=ctx.guild)
-    
-      return voice
+      if(not await self.is_connected(ctx)):
+        self.guild_params[ctx.guild.id]["players"] = await channel.connect()
     except:
       print("Error trying to connect to channel")
 
-  def is_connected(self, ctx):
+  async def is_connected(self, ctx):
     voice_client = utils.get(ctx.bot.voice_clients, guild=ctx.guild)
     return voice_client and voice_client.is_connected()
