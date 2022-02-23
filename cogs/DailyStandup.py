@@ -74,13 +74,6 @@ class DailyStandup(commands.Cog):
   async def force(self, ctx):
     await ctx.send(self.options["daily_message"])
 
-  @commands.command(
-    help="Used to test if the bot is active and replys pong.",
-    brief="Replys pong."
-  )
-  async def ping(self, ctx):
-    await ctx.send("pong!")
-
   def getMilliTill(self, hour, minutes):
     now = datetime.now(self.options["timezone"])
     target_time = self.options["timezone"].localize(datetime(now.year, now.month, now.day, hour, minutes))
