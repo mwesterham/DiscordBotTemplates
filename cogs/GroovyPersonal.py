@@ -177,7 +177,7 @@ class GroovyPersonal(commands.Cog):
     if(item_number == None):
       await ctx.send("Must provide the number of an item in the queue to remove.")
       return
-    [url, meta] = self.guild_params[ctx.guild.id]["song_queue"].pop(int(item_number)-1)
+    [url, meta, song_id] = self.guild_params[ctx.guild.id]["song_queue"].pop(int(item_number)-1)
     await ctx.send("Removed " + meta['title'])
 
   @commands.command(
