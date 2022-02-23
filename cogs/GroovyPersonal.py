@@ -67,6 +67,8 @@ class GroovyPersonal(commands.Cog):
       else:
         await asyncio.sleep(1)
 
+    self.guild_params[ctx.guild.id]["running"] = False
+
     # running is now false, reset
     self.guild_params[ctx.guild.id]["song_queue"].clear()
 
