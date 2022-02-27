@@ -1,6 +1,7 @@
 from discord.ext import commands, tasks
 from discord import FFmpegPCMAudio, utils, PCMVolumeTransformer
 import os, glob
+import shutil
 import asyncio
 import yt_dlp
 
@@ -18,16 +19,20 @@ class GroovyPersonal(commands.Cog):
       print(guild)
 
       this_dir = "./mp3s-cache/mp3s-"+str(guild.id)+"/"
+      this_download_dir = "./mp3s-cache/mp3s-"+str(guild.id)+"/downloading/"
       if not os.path.exists(this_dir):
         os.makedirs(this_dir)
+      if not os.path.exists(this_download_dir):
+        os.makedirs(this_download_dir)
       self.guild_params[guild.id] = {
         "players": None,
         "song_queue": [],
         "mp3_directory": this_dir,
+        "intermediate_dir": this_download_dir,
         "running": False,
         "paused": False,
         'ydl_opts': {
-          'outtmpl': './'+this_dir+'/%(id)s.%(ext)s',
+          'outtmpl': './'+this_download_dir+'/%(id)s.%(ext)s',
           "format": "bestaudio/best",
           'noplaylist':'True',
           "postprocessors": [{
@@ -151,10 +156,12 @@ class GroovyPersonal(commands.Cog):
       title = meta['title']
       await ctx.send("Searching/Downloading... (" + title + ")")
 
+      inter_dir = self.guild_params[ctx.guild.id]['intermediate_dir']
       mp3_dir = self.guild_params[ctx.guild.id]['mp3_directory']
       if not glob.glob(mp3_dir + song_id):
         print("Could not find song cached, downloading now.")
         await self.download_song(ctx, url)
+        shutil.move(inter_dir + song_id, mp3_dir + song_id)
       
       song_info = [url, meta, song_id]
       self.guild_params[ctx.guild.id]["song_queue"].append(song_info)
@@ -227,10 +234,7 @@ class GroovyPersonal(commands.Cog):
 
   async def play_song(self, voice, path, volume="0.25"):
     try:
-      ffmpeg_options = {
-        'options': '-vn'
-      }
-      source = FFmpegPCMAudio(path, **ffmpeg_options)
+      source = FFmpegPCMAudio(path)
       voice.play(source)
       voice.source = PCMVolumeTransformer(voice.source, volume=float(volume))
     except:
