@@ -18,17 +18,19 @@ class GroovyPersonal(commands.Cog):
     for guild in self.bot.guilds:
       print(guild)
 
-      this_dir = "./mp3s-cache/mp3s-"+str(guild.id)+"/"
-      this_download_dir = "./mp3s-cache/mp3s-"+str(guild.id)+"/downloading/"
-      if not os.path.exists(this_dir):
-        os.makedirs(this_dir)
+      guild_root_dir = "./mp3s-cache/mp3s-"+str(guild.id)+"/"
+      this_play_dir = guild_root_dir + "playing/"
+      this_download_dir = guild_root_dir + "downloading/"
+      if not os.path.exists(this_play_dir):
+        os.makedirs(this_play_dir)
       if not os.path.exists(this_download_dir):
         os.makedirs(this_download_dir)
       self.guild_params[guild.id] = {
         "players": None,
         "song_queue": [],
-        "mp3_directory": this_dir,
-        "intermediate_dir": this_download_dir,
+        "guild_root_dir": guild_root_dir,
+        "mp3_play_directory": this_play_dir,
+        "mp3_download_directory": this_download_dir,
         "running": False,
         "paused": False,
         'ydl_opts': {
@@ -66,7 +68,7 @@ class GroovyPersonal(commands.Cog):
     voice = self.guild_params[ctx.guild.id]["players"]
 
     self.guild_params[ctx.guild.id]["running"] = True
-    mp3_dir = self.guild_params[ctx.guild.id]['mp3_directory']
+    
     while(self.guild_params[ctx.guild.id]["running"] and await self.is_connected(ctx)):
       songsAreQueued = len(self.guild_params[ctx.guild.id]["song_queue"]) > 0
       ispaused = self.guild_params[ctx.guild.id]["paused"]
@@ -76,6 +78,9 @@ class GroovyPersonal(commands.Cog):
         song_info = self.guild_params[ctx.guild.id]["song_queue"].pop(0)
         self.guild_params[ctx.guild.id]["song_queue"].append(song_info)
         [url, meta, song_id] = song_info
+
+        mp3_dir = self.guild_params[ctx.guild.id]['mp3_play_directory']
+        self.move_intermediates(ctx)
           
         await ctx.send("Now playing " + meta['title'])
         await self.play_song(voice, mp3_dir + song_id)
@@ -156,12 +161,10 @@ class GroovyPersonal(commands.Cog):
       title = meta['title']
       await ctx.send("Searching/Downloading... (" + title + ")")
 
-      inter_dir = self.guild_params[ctx.guild.id]['intermediate_dir']
-      mp3_dir = self.guild_params[ctx.guild.id]['mp3_directory']
-      if not glob.glob(mp3_dir + song_id):
+      mp3_path = self.guild_params[ctx.guild.id]['mp3_play_directory'] + song_id
+      if not glob.glob(mp3_path):
         print("Could not find song cached, downloading now.")
         await self.download_song(ctx, url)
-        shutil.move(inter_dir + song_id, mp3_dir + song_id)
       
       song_info = [url, meta, song_id]
       self.guild_params[ctx.guild.id]["song_queue"].append(song_info)
@@ -226,7 +229,7 @@ class GroovyPersonal(commands.Cog):
     brief="Clear cache."
   )
   async def clearcache(self, ctx):
-    mp3_dir = self.guild_params[ctx.guild.id]['mp3_directory']
+    mp3_dir = self.guild_params[ctx.guild.id]['guild_root_dir']
     filelist = glob.glob(os.path.join(mp3_dir, "*"+self.extension))
     for f in filelist:
       os.remove(f)
@@ -260,3 +263,11 @@ class GroovyPersonal(commands.Cog):
   async def is_connected(self, ctx):
     voice_client = utils.get(ctx.bot.voice_clients, guild=ctx.guild)
     return voice_client and voice_client.is_connected()
+
+  def move_intermediates(self, ctx):
+    sourcepath=self.guild_params[ctx.guild.id]['mp3_download_directory']
+    sourcefiles = os.listdir(sourcepath)
+    destinationpath = self.guild_params[ctx.guild.id]['mp3_play_directory']
+    for file in sourcefiles:
+      if file.endswith(self.extension):
+        shutil.move(os.path.join(sourcepath,file), os.path.join(destinationpath,file))
