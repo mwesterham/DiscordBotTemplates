@@ -25,7 +25,17 @@ class GroovyPersonal(commands.Cog):
         "song_queue": [],
         "mp3_directory": this_dir,
         "running": False,
-        "paused": False
+        "paused": False,
+        'ydl_opts': {
+          'outtmpl': './'+this_dir+'/%(id)s.%(ext)s',
+          "format": "bestaudio/best",
+          'noplaylist':'True',
+          "postprocessors": [{
+            'key': 'FFmpegExtractAudio',
+            "preferredcodec": "mp3",
+            "preferredquality": "192"
+          }]
+        }
       }
   
   @commands.Cog.listener()
@@ -135,8 +145,7 @@ class GroovyPersonal(commands.Cog):
   )
   async def add(self, ctx, url=None):
     if(url):
-      url = url.split('&')[0]
-      meta = await self.getMetaData(url)
+      meta = await self.get_meta_data(ctx, url)
 
       song_id = meta['id'] + self.extension
       title = meta['title']
@@ -145,7 +154,7 @@ class GroovyPersonal(commands.Cog):
       mp3_dir = self.guild_params[ctx.guild.id]['mp3_directory']
       if not glob.glob(mp3_dir + song_id):
         print("Could not find song cached, downloading now.")
-        await self.download_song(url, mp3_dir)
+        await self.download_song(ctx, url)
       
       song_info = [url, meta, song_id]
       self.guild_params[ctx.guild.id]["song_queue"].append(song_info)
@@ -214,39 +223,25 @@ class GroovyPersonal(commands.Cog):
     filelist = glob.glob(os.path.join(mp3_dir, "*"+self.extension))
     for f in filelist:
       os.remove(f)
+    await ctx.send("Cache has been cleared! ")
 
   async def play_song(self, voice, path, volume="0.25"):
     try:
-      source = FFmpegPCMAudio(path)
+      ffmpeg_options = {
+        'options': '-vn'
+      }
+      source = FFmpegPCMAudio(path, **ffmpeg_options)
       voice.play(source)
       voice.source = PCMVolumeTransformer(voice.source, volume=float(volume))
     except:
       print("Could not play for some reason.")
 
-  async def download_song(self, url, directory):
-    ydl_opts = {
-        'outtmpl': './'+directory+'/%(id)s.%(ext)s',
-        "format": "bestaudio/best",
-        "postprocessors": [{
-          'key': 'FFmpegExtractAudio',
-          "preferredcodec": "mp3",
-          "preferredquality": "192"
-        }]
-      }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+  async def download_song(self, ctx, url):
+    with yt_dlp.YoutubeDL(self.guild_params[ctx.guild.id]['ydl_opts']) as ydl:
       ydl.download([url])
 
-  async def getMetaData(self, url):
-    ydl_opts = {
-        'outtmpl': '%(title)s.%(ext)s',
-        "format": "bestaudio/best",
-        "postprocessors": [{
-          'key': 'FFmpegExtractAudio',
-          "preferredcodec": "mp3",
-          "preferredquality": "192"
-        }]
-      }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+  async def get_meta_data(self, ctx, url):
+    with yt_dlp.YoutubeDL(self.guild_params[ctx.guild.id]['ydl_opts']) as ydl:
       meta = ydl.extract_info(url, download=False)
     return meta
 
